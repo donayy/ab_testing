@@ -1,0 +1,138 @@
+# Facebook recently introduced a new bidding type called "average bidding" as an alternative to the existing "maximum bidding" bidding type. 
+# One of the customers decided to test this new feature and wants to conduct an A/B test to see whether average bidding leads to more conversions than maximum bidding. 
+# The A/B test has been running for one month, and the customer is now expecting the results to be analyzed. The ultimate success metric for the customer is Purchase. 
+# Therefore, statistical tests should focus on the Purchase metric.
+
+# Dataset Story
+
+# This dataset contains information about a company's website, including the number of ads seen and clicked by users, as well as the revenue generated from these actions. 
+# There are two separate datasets: Control and Test groups. These datasets are located in separate sheets of the "ab_testing.xlsx" Excel file. 
+# Maximum Bidding was applied to the Control group, while Average Bidding was applied to the Test group.
+
+# 4 Variables, 40 Observations, 26 KB
+# Impression: The number of times an ad was viewed
+# Click: The number of times the viewed ad was clicked
+# Purchase: The number of products purchased after clicking the ad
+
+import itertools
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import statsmodels.stats.api as sms
+from scipy.stats import ttest_1samp, shapiro, levene, ttest_ind, mannwhitneyu, pearsonr, spearmanr, kendalltau, f_oneway, kruskal
+from statsmodels.stats.proportion import proportions_ztest
+
+pd.set_option('display.max_columns', None)
+pd.set_option('display.max_rows', 10)
+pd.set_option('display.float_format', lambda x: '%.4f' % x)
+
+
+control_group = pd.read_excel("C:/Users/Asus/PycharmProjects/pythonProject4/datasets/ab_testing.xlsx", sheet_name="Control Group")
+test_group = pd.read_excel("C:/Users/Asus/PycharmProjects/pythonProject4/datasets/ab_testing.xlsx", sheet_name="Test Group")
+
+def check_df(dataframe, head=5, column="Purchase"):
+    print("##################### Shape #####################")
+    print(dataframe.shape)
+    print("##################### Types #####################")
+    print(dataframe.dtypes)
+    print("##################### Types #####################")
+    print(dataframe.info())
+    print("##################### Head #####################")
+    print(dataframe.head(head))
+    print("##################### Tail #####################")
+    print(dataframe.tail(head))
+    print("##################### MissingValues #######################")
+    print(dataframe.isnull().sum())
+    print("##################### Quantiles #####################")
+    print(dataframe.quantile([0, 0.05, 0.25, 0.50, 0.75, 0.95, 0.99, 1]).T)
+
+control_group.describe().T
+test_group.describe().T
+check_df(control_group, column="Purchase")
+check_df(test_group, column="Purchase")
+
+control_group.columns = [col + "-Control" for col in control_group.columns]
+control_group.head()
+test_group.columns = [col + "-Test" for col in test_group.columns]
+test_group.head()
+df = pd.concat([control_group, test_group], axis=1)
+df.head()
+
+# Step 1: Define the hypothesis.
+# H0: M1 = M2 (There is no statistically significant difference between the Control group (max bidding) and the Test group (avg bidding).)
+# H1: M1 != M2 (There is a statistically significant difference between the Control group (max bidding) and the Test group (avg bidding).)
+
+
+df["Purchase-Control"].mean()
+# Mean of Purchase-Control is 550.8940587702316
+print("Mean of Purchase-Control with %95 confidence interval ({:.4f}, {:.4f})".format(*sms.DescrStatsW(df["Purchase-Control"]).tconfint_mean()))
+# Mean of Purchase-Control with %95 confidence interval (508.0042, 593.7839)
+
+df["Purchase-Test"].mean()
+# Mean of Purchase-Test is 582.1060966484675
+print("Mean of Purchase-Test with %95 confidence interval    ({:.4f}, {:.4f})".format(*sms.DescrStatsW(df["Purchase-Test"]).tconfint_mean()))
+# Mean of Purchase-Test with %95 confidence interval    (530.5670, 633.6452)
+
+# Normality Assumption: 
+# H0: The assumption of normal distribution is satisfied. 
+# H1: The assumption of normal distribution is not satisfied. 
+# p < 0.05 H0 REJECTED, p > 0.05 H0 CANNOT BE REJECTED
+
+
+test_stat, pvalue = shapiro(df["Purchase-Control"])
+print('Test Stat = %.4f, p-value = %.4f' % (test_stat, pvalue))
+# Test Stat = 0.9773, p-value = 0.5891
+# Since the p-value is greater than 0.05, H0 cannot be rejected. The normality assumption is satisfied for the Control group.
+
+test_stat, pvalue = shapiro(df["Purchase-Test"])
+print('Test Stat = %.4f, p-value = %.4f' % (test_stat, pvalue))
+# Test Stat = 0.9589, p-value = 0.1541
+# Since the p-value is greater than 0.05, H0 cannot be rejected. The normality assumption is satisfied for the Test group.
+
+
+# Homogeneity of Variance: 
+# H0: The variances are homogeneous. 
+# H1: The variances are not homogeneous. 
+# p < 0.05 H0 REJECTED, p > 0.05 H0 CANNOT BE REJECTED
+
+
+test_stat, pvalue = levene(df["Purchase-Control"], df["Purchase-Test"])
+print("Test stat = %.4f, p-value = %.4f" % (test_stat, pvalue))
+# Test stat = 2.6393, p-value = 0.1083
+# Since the p-value is greater than 0.05, H0 cannot be rejected. Homogeneity of variance is satisfied for both the Control and Test groups.
+
+
+# Since normality and homogeneity of variance are satisfied, a Parametric T-Test is applied.
+test_stat, pvalue = ttest_ind(df["Purchase-Control"], df["Purchase-Test"], equal_var=True)
+print("Test stat = %.4f, p-value = %.4f" % (test_stat, pvalue))
+# Test stat = -0.9416, p-value = 0.3493
+# Since the p-value is greater than 0.05, H0 cannot be rejected, 
+# meaning there is no statistically significant difference between the Control group (max bidding) and the Test group (avg bidding).
+
+
+
+# H0: p1 = p2
+# There is no statistically significant difference between the proportions of the Control group (max bidding) and the Test group (avg bidding).
+# H1: p1 != p2
+# There is a statistically significant difference between the proportions of the Control group (max bidding) and the Test group (avg bidding).
+
+df["Purchase-Control"].mean()
+df["Purchase-Test"].mean()
+
+pur_cntrl_succ_count = df["Purchase-Control"].sum()
+pur_test_succ_count = df["Purchase-Test"].sum()
+
+purchase_sum = np.array([df["Purchase-Control"].sum(), df["Purchase-Test"].sum()])
+purchase_var = np.array([df["Purchase-Control"].shape[0], df["Purchase-Test"].shape[0]])
+
+test_stat, pvalue = proportions_ztest(count=purchase_var, nobs=purchase_sum)
+print('Test Stat = %.4f, p-value = %.4f' % (test_stat, pvalue))
+
+# Test Stat = 0.2467, p-value = 0.8051
+# Since the p-value is greater than 0.05, H0 cannot be rejected, 
+# meaning there is no statistically significant difference between the proportions of the Control group (max bidding) and the Test group (avg bidding).
+# There is no statistically significant difference between the averages and proportions of the control and test groups for the new feature (avg bidding) compared to max bidding. 
+# Therefore, the current bidding method can be continued.
+
+
